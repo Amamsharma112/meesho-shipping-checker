@@ -161,6 +161,40 @@ def admin_plan(uid):
 @login_required
 def billing(): return render_template('billing.html')
 
+@app.route('/browserless-test', methods=['GET','POST'])
+@login_required
+def browserless_test():
+    """Smoke-test the managed browser connection only; does not log in to Meesho."""
+    token = os.environ.get('BROWSERLESS_TOKEN', '').strip()
+    if not token:
+        return {'ok': False, 'error': 'BROWSERLESS_TOKEN is not configured on the server.'}, 503
+    endpoint = os.environ.get('BROWSERLESS_WS_ENDPOINT', 'wss://production-sfo.browserless.io').strip()
+    # Prevent accidental token exposure through logs or user-facing errors.
+    from urllib.parse import urlencode
+    ws_url = endpoint.rstrip('/') + '?' + urlencode({'token': token})
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(ws_url, timeout=30000)
+            try:
+                contexts = browser.contexts
+                context = contexts[0] if contexts else browser.new_context()
+                page = context.new_page()
+                page.goto('https://example.com', wait_until='domcontentloaded', timeout=20000)
+                title = page.title()
+                page.close()
+                if title != 'Example Domain':
+                    return {'ok': False, 'error': 'Browser connected but smoke-test page title did not match.'}, 502
+                return {'ok': True, 'message': 'Browserless connection successful.', 'test_page_title': title,
+                        'note': 'This verifies browser connectivity only. Meesho login, per-user session isolation, and selectors are not yet configured.'}
+            finally:
+                browser.close()
+    except Exception as exc:
+        # Do not return raw exception strings because they may contain connection details.
+        app.logger.warning('Browserless smoke test failed: %s', type(exc).__name__)
+        return {'ok': False, 'error': 'Browserless connection failed. Check token, endpoint, plan limits, and Render logs.',
+                'error_type': type(exc).__name__}, 502
+
 @app.route('/health')
 def health(): return {'status':'ok','service':'meesho-shipping-checker-saas'}
 
