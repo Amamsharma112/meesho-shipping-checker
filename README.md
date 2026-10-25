@@ -30,3 +30,23 @@ A Flask-compatible host that runs a web service can deploy this repository. Set 
 
 ## Existing desktop automation
 `desktop_main_reference.py` contains the desktop Playwright workflow. Its CDP URL points to a local browser and must **not** be used unchanged on a cloud server. The cloud worker needs its own browser lifecycle and authenticated user context.
+
+
+## Background worker scaffold (safe mode)
+
+A separate worker process is included in `worker.py` and the Procfile has a `worker` process type.
+This scaffold is intentionally safe mode: it reports queued jobs but does not access Meesho or
+write fake shipping values. Deploy it as a separate Render Background Worker using the same
+repository and set the same `DATABASE_URL` as the web service, plus `BROWSERLESS_TOKEN` and
+`BROWSERLESS_WS_ENDPOINT` if needed. Do not use SQLite across separate Render services because
+its local filesystem is not shared. Use a shared PostgreSQL database.
+
+### Before real capture can be enabled
+
+- Implement per-user isolated authenticated Browserless sessions and safe session lifecycle.
+- Verify the Meesho workflow/selectors against a real logged-in test session.
+- Add durable queue/locking/retries and shared persistent image storage.
+- Only save shipping/price values when parsed from the page; otherwise mark `Needs review`.
+- Never store a user's Meesho password or share browser state between users.
+
+This worker is a deployment scaffold, not a functioning shipping-capture worker.
